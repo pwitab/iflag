@@ -1,7 +1,7 @@
 import socket
 
-HOST = 'localhost'
-PORT = 5011
+HOST = '10.70.138.159'
+PORT = 8000
 
 METER_ADDRESS = b''
 #METER_ADDRESS = b''
@@ -59,89 +59,80 @@ def add_parity(input_string):
 
 if __name__ == '__main__':
 
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.settimeout(10)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)  # Keep the socket alive
-    print('Connecting to socket:', HOST, ':', str(PORT))
+    while True:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(30)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)  # Keep the socket alive
+        print('Connecting to socket:', HOST, ':', str(PORT))
 
-    sock.connect((HOST, PORT))
-    print('Connected!')
+        sock.connect((HOST, PORT))
+        print('Connected!')
 
-    initiate_message = bytes(200)
-    #initiate_message = make_init_message(METER_ADDRESS)  # Get message from protoco
-    #initiate_message = initiate_message.encode('latin-1')
-    #initiate_message = add_parity(initiate_message)  # Converts to eight bit
-    print(type(initiate_message))
-    print(initiate_message)
+        initiate_message = bytes(200)
+        #initiate_message = make_init_message(METER_ADDRESS)  # Get message from protoco
+        #initiate_message = initiate_message.encode('latin-1')
+        #initiate_message = add_parity(initiate_message)  # Converts to eight bit
+        print(type(initiate_message))
+        print(initiate_message)
 
-    sock.sendall(initiate_message)
+        sock.sendall(initiate_message)
 
-    response = sock.recv(3)
-    print(response)
+        response = sock.recv(3)
+        print(response)
 
-    #sock.sendall(initiate_message)
-    print(initiate_message)
+        #sock.sendall(initiate_message)
+        print(initiate_message)
 
-    sock.sendall(make_init_message(b''))
-    print(make_init_message(b''))
+        sock.sendall(make_init_message(b''))
+        print(make_init_message(b''))
 
-    response = sock.recv(17)
-    print(response)
+        response = sock.recv(17)
+        print(response)
 
-    sock.sendall(b'\x06\x30\x37\x30\x0d\x0a')
-    print(b'\x06\x30\x37\x30\x0d\x0a')
+        sock.sendall(b'\x06\x30\x37\x30\x0d\x0a')
+        print(b'\x06\x30\x37\x30\x0d\x0a')
 
-    result = sock.recv(10)
-    print(result)
+        result = sock.recv(10)
+        print(result)
 
-    sock.sendall(b'PASS\xe0\xae')
-    print(b'PASS\xe0\xae')
+        sock.sendall(b'PASS\xe0\xae')
+        print(b'PASS\xe0\xae')
 
-    response = sock.recv(10)
-    print(response)
+        response = sock.recv(10)
+        print(response)
 
-    # read out alarms
-    # to_send = '01be0d047a000000000000000000000003c1e3'
-    # sock.sendall(bytes.fromhex(to_send))
-    #
-    # response = sock.recv(300)
-    #
-    # sock.sendall(b'\x06')
-    # response += sock.recv(300)
-    #
-    # sock.sendall(b'\x06')
-    # response += sock.recv(300)
-    #
-    # sock.sendall(b'\x06')
-    # response += sock.recv(300)
-    #
-    # sock.sendall(b'\x06')
-    # response += sock.recv(300)
-    #
-    # sock.sendall(b'\x06')
-    # response += sock.recv(300)
-    #
-    # print(response.split(b'\xff\xff\xff\xff'))
+        # read out alarms
+        # to_send = '01be0d047a000000000000000000000003c1e3'
+        # sock.sendall(bytes.fromhex(to_send))
+        #
+        # response = sock.recv(300)
+        #
+        # sock.sendall(b'\x06')
+        # response += sock.recv(300)
+        #
+        # sock.sendall(b'\x06')
+        # response += sock.recv(300)
+        #
+        # sock.sendall(b'\x06')
+        # response += sock.recv(300)
+        #
+        # sock.sendall(b'\x06')
+        # response += sock.recv(300)
+        #
+        # sock.sendall(b'\x06')
+        # response += sock.recv(300)
+        #
+        # print(response.split(b'\xff\xff\xff\xff'))
 
-    # read out interval
-    to_send = '01be0d00f9ff0f38000000000000000003fa0e'
-    sock.sendall(bytes.fromhex(to_send))
+        # read out interval
+        to_send = '01be0d00f9ff0f38000000000000000003fa0e'
+        sock.sendall(bytes.fromhex(to_send))
+        while True:
+            response = sock.recv(600)
+            sock.sendall(b'\x06')
+            print(response)
 
-    response = sock.recv(600)
-    sock.sendall(b'\x06')
-    print(response)
-
-    response = sock.recv(600)
-    sock.sendall(b'\x06')
-    print(response)
-
-    response = sock.recv(600)
-    sock.sendall(b'\x06')
-    print(response)
-
-    response = sock.recv(600)
-
-    print(response)
+        sock.close()
 
 
 
