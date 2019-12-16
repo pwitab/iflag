@@ -1,3 +1,5 @@
+import datetime
+
 from iflag.client import CorusClient
 import logging
 from logging.config import DictConfigurator
@@ -33,5 +35,9 @@ client.connect()
 #client.transport.recv(600)
 client.wakeup()
 client.sign_on()
+#result = client.read_parameters_by_id([148, 149])
+result = client.read_parameters_by_name(['index_unconverted', 'index_converted'])
 
-client.read_database()
+#result = client.read_database(database='hourly', stop=(datetime.datetime.utcnow()-datetime.timedelta(days=1)))
+
+print(result)

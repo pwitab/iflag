@@ -102,7 +102,7 @@ if __name__ == '__main__':
         print(response)
 
         # read out alarms
-        # to_send = '01be0d047a000000000000000000000003c1e3'
+        # to_send = ''01be0d047a000000000000000000000003'c1e3'
         # sock.sendall(bytes.fromhex(to_send))
         #
         # response = sock.recv(300)

@@ -1,7 +1,7 @@
 import datetime
 
 from iflag import constants
-from typing import Union
+from typing import Union, Optional
 
 
 def crc16(data: Union[bytearray, bytes], initial_value=0x0000, byteorder="little"):
@@ -38,7 +38,10 @@ def crc_valid(data: bytes, crc: bytes):
     return crc == computed_crc
 
 
-def date_to_byte(date: datetime.datetime):
+def date_to_byte(date: Optional[datetime.datetime]):
+    if date is None:
+        return b"\x00\x00\x00\x00"
+
     day_index = 17
     day = date.day
     day_value = day << day_index
@@ -61,13 +64,16 @@ def date_to_byte(date: datetime.datetime):
     total_value = (
         second_value + minute_value + hour_value + day_value + month_value + year_value
     )
-    out_bytes = total_value.to_bytes(4, "big")
+    out_bytes = total_value.to_bytes(4, "little")
     return out_bytes
 
 
-def byte_to_date(in_bytes: bytes):
+def byte_to_date(in_bytes: Optional[bytes]):
+    if in_bytes is None:
+        return None
+
     # TODO: UTC offset!
-    in_value = int.from_bytes(in_bytes, "big")
+    in_value = int.from_bytes(in_bytes, "little")
     day_bitmask = 0b00000000001111100000000000000000
     month_bitmask = 0b00000011110000000000000000000000
     year_bitmask = 0b11111100000000000000000000000000
@@ -98,3 +104,12 @@ def byte_to_date(in_bytes: bytes):
     )
 
     return dt
+
+
+def ensure_bytes(data):
+    if isinstance(data, str):
+        return data.encode(constants.ENCODING)
+    elif isinstance(data, bytes):
+        return data
+    else:
+        raise ValueError(f"data:{data!r} cant be converted to bytes")

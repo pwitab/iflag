@@ -21,7 +21,7 @@ class BaseTransport:
     def disconnect(self):
         raise NotImplemented("Must be defined in subclass")
 
-    def corus_read(self):
+    def read_database(self):
 
         data = b""
         record_size: Optional[int] = None
@@ -94,111 +94,9 @@ class BaseTransport:
                 retry_count = 0  # Reset retry for a message part
                 previous_frame_number = current_frame_number
 
+        records = [data[i:i+record_size] for i in range(0, len(data), record_size)]
+        return records
 
-        # TODO: split records and give them timestamps.
-
-
-        return data
-
-    def read(self, timeout=None):
-        """
-        Will read a normal readout. Supports both full and partial block readout.
-        When using partial blocks it will recreate the messages as it was not sent with
-        partial blocks
-
-        :param timeout:
-        :return:
-        """
-        start_chars = [b"\x01", b"\x02"]
-        end_chars = [b"\x03", b"\x04"]
-        total_data = b""
-        packets = 0
-        start_char_received = False
-        start_char = None
-        end_char = None
-        timeout = timeout or self.timeout
-
-        while True:
-
-            in_data = b""
-            duration = 0
-            start_time = time.time()
-            while True:
-                b = self.recv(1)
-                duration = time.time() - start_time
-                if duration > self.timeout:
-                    raise TimeoutError(f"Read in {self.__class__.__name__} timed out")
-                if not start_char_received:
-                    # is start char?
-                    if b in start_chars:
-                        in_data += b
-                        start_char_received = True
-                        start_char = b
-                        continue
-                    else:
-                        continue
-                else:
-                    # is end char?
-                    if b in end_chars:
-                        in_data += b
-                        end_char = b
-                        break
-                    else:
-                        in_data += b
-                        continue
-
-            packets += 1
-
-            bcc = self.recv(1)
-            in_data += bcc
-            logger.debug(
-                f"Received {in_data!r} over transport: {self.__class__.__name__}"
-            )
-
-            if start_char == b"\x01":
-                # This is a command message, probably Password challange.
-                total_data += in_data
-                break
-
-            if end_char == b"\x04":  # EOT (partial read)
-                # we received a partial block
-                if not utils.bcc_valid(in_data):
-                    # Nack and read again
-                    self.send(constants.NACK.encode(constants.ENCODING))
-                    continue
-                else:
-                    # ack and read next
-                    self.send(constants.ACK.encode(constants.ENCODING))
-                    # remove bcc and eot and add line end.
-                    in_data = in_data[:-2] + constants.LINE_END.encode(
-                        constants.ENCODING
-                    )
-                    if packets > 1:
-                        # remove the leading STX
-                        in_data = in_data[1:]
-
-                    total_data += in_data
-                    continue
-
-            if end_char == b"\x03":
-                # Either it was the only message or we got the last message.
-                if not utils.bcc_valid(in_data):
-                    # Nack and read again
-                    self.send(constants.NACK.encode(constants.ENCODING))
-                    continue
-                else:
-                    if packets > 1:
-                        in_data = in_data[1:]  # removing the leading STX
-                    total_data += in_data
-                    if packets > 1:
-                        # The last bcc is not correct compared to the whole
-                        # message. But we have verified all the bccs along the way so
-                        # we just compute it so the message is usable.
-                        total_data = utils.add_bcc(total_data[:-1])
-
-                    break
-
-        return total_data
 
     def simple_read(self, start_char, end_char, timeout=None):
         """
@@ -270,14 +168,8 @@ class BaseTransport:
         """
         raise NotImplemented("Must be defined in subclass")
 
-    def switch_baudrate(self, baud):
-        """
-        The protocol defines a baudrate switchover process. Though it might not be used
-        in all available transports.
-
-        :param baud:
-        """
-        raise NotImplemented("Must be defined in subclass")
+class TransportError(Exception):
+    pass
 
 
 class TcpTransport(BaseTransport):
@@ -328,13 +220,6 @@ class TcpTransport(BaseTransport):
             raise TransportError from e
         return b
 
-    def switch_baudrate(self, baud):
-        """
-        Baudrate has not meaning in TCP/IP so we just dont do anything.
-
-        :param baud:
-        """
-        pass
 
     def _get_socket(self):
         """
