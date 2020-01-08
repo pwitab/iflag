@@ -12,7 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 ### Security
 
-## [0.1.0] - 2020-01-08
+## [0.1.1] - 2020-01-08
+
+### Fixed
+- Fixed error in setup.py that listed the wrong dependency. (attr instead of attrs)
+
+## [0.1.0] - 2020-01-08 [YANKED]
 
 ### Added
 - Initial implementation of reading and writing data to Corus device.
