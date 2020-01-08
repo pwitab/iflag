@@ -1,10 +1,10 @@
 import datetime
-
-from iflag import constants
 from typing import Union, Optional
 
 
-def crc16(data: Union[bytearray, bytes], initial_value=0x0000, byteorder="little"):
+def crc16(
+    data: Union[bytearray, bytes], initial_value=0x0000, byteorder="little"
+) -> bytes:
     """
     Calculates CRC 16
     Polynomial = X16 + X15 + X2 + 1. (X15 + X2 + 1) = 0x8005
@@ -25,7 +25,7 @@ def crc16(data: Union[bytearray, bytes], initial_value=0x0000, byteorder="little
     return result
 
 
-def add_crc(data: bytes):
+def add_crc(data: bytes) -> bytes:
     """
     Will calculate a crc and add it to the input data
     """
@@ -33,12 +33,26 @@ def add_crc(data: bytes):
     return data + crc
 
 
-def crc_valid(data: bytes, crc: bytes):
+def crc_valid(data: bytes, crc: bytes) -> bool:
+    """
+    Check if a CRC is valid
+    :param data: data
+    :param crc: crc
+    :return: True if valid
+    """
     computed_crc = crc16(data)
     return crc == computed_crc
 
 
-def date_to_byte(date: Optional[datetime.datetime]):
+def date_to_byte(date: Optional[datetime.datetime]) -> bytes:
+    """
+    Converts a date to Corus byte representation of the data.
+    Without timezone.
+    A non existant data still needs to be added as zero bytes to we pad up the
+    correct number of bytes if None.
+    :param date: Datetime object.
+    :return:
+    """
     if date is None:
         return b"\x00\x00\x00\x00"
 
@@ -68,7 +82,12 @@ def date_to_byte(date: Optional[datetime.datetime]):
     return out_bytes
 
 
-def byte_to_date(in_bytes: Optional[bytes]):
+def byte_to_date(in_bytes: Optional[bytes]) -> Optional[datetime.datetime]:
+    """
+    Will convert a Corus date from bytes to datetime object.
+    :param in_bytes:
+    :return:
+    """
     if in_bytes is None:
         return None
 
@@ -107,8 +126,11 @@ def byte_to_date(in_bytes: Optional[bytes]):
 
 
 def ensure_bytes(data):
+    """
+    Utility to make sure a value is in bytes or encode it.
+    """
     if isinstance(data, str):
-        return data.encode(constants.ENCODING)
+        return data.encode('latin-1')
     elif isinstance(data, bytes):
         return data
     else:

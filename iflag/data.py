@@ -1,14 +1,30 @@
 import datetime
 import decimal
 import struct
-from iflag import utils
+from iflag import utils, exceptions
 import typing
 import attr
 
 
 class CorusData:
     byte_order = "little"
-    length = 0
+    length = 1
+    value_type = int
+
+    @classmethod
+    def check_in_data(cls, in_data):
+        if len(in_data) != cls.length:
+            raise ValueError(
+                f"{cls.__class__.__name__} can only be of length {cls.length}, "
+                f"received data {in_data!r} of length {len(in_data)}"
+            )
+
+    def check_value_type(self, value):
+        if not isinstance(value, self.value_type):
+            raise exceptions.DataError(
+                f"Class {self.__class__.__name__} need a value of "
+                f"type {self.value_type}"
+            )
 
     @classmethod
     def from_bytes(cls, in_bytes: bytes):
@@ -20,12 +36,15 @@ class CorusData:
 
 class Date(CorusData):
     length = 4
+    value_type = datetime.datetime
 
     def __init__(self, value: datetime.datetime):
+        self.check_value_type(value)
         self.value = value
 
     @classmethod
     def from_bytes(cls, in_bytes: bytes):
+        cls.check_in_data(in_bytes)
         date = utils.byte_to_date(in_bytes)
         return cls(value=date)
 
@@ -38,21 +57,20 @@ class Integer(CorusData):
     Base for integers.
     """
 
-    bits = 8
     length = 1
+    value_type = int
 
     def __init__(self, value: int):
+        self.check_value_type(value)
         self.value = value
 
     @classmethod
     def from_bytes(cls, in_bytes: bytes):
-        if len(in_bytes) > (cls.bits / 8):
-            raise ValueError("Byte can only be of length 1")
-
+        cls.check_in_data(in_bytes)
         return cls(value=int.from_bytes(in_bytes, cls.byte_order))
 
     def to_bytes(self):
-        return self.value.to_bytes(int((self.bits / 8)), self.byte_order)
+        return self.value.to_bytes(int(self.length), self.byte_order)
 
 
 class Byte(Integer):
@@ -69,7 +87,6 @@ class EWord(Integer):
     """
 
     length = 3
-    bits = 24
 
 
 class Word(Integer):
@@ -78,7 +95,6 @@ class Word(Integer):
     """
 
     length = 2
-    bits = 16
 
 
 class ULong(Integer):
@@ -87,7 +103,6 @@ class ULong(Integer):
     """
 
     length = 4
-    bits = 32
 
 
 class EULong(Integer):
@@ -96,7 +111,6 @@ class EULong(Integer):
     """
 
     length = 5
-    bits = 40
 
 
 class Float(CorusData):
@@ -105,13 +119,20 @@ class Float(CorusData):
     """
 
     length = 4
+    value_type = decimal.Decimal
 
     def __init__(self, value: decimal.Decimal):
+        self.check_value_type(value)
         self.value = value
 
     @classmethod
     def from_bytes(cls, in_bytes: bytes):
-        return cls(decimal.Decimal(str(struct.unpack("<f", in_bytes))))
+        cls.check_in_data(in_bytes)
+        dec = decimal.Decimal(str(struct.unpack("<f", in_bytes)[0]))
+        # On a 64bit system you will get problem with extra "garbage" bits/decimals in
+        # conversion from 32 bits to 64 bit.
+        # So we quantize the resulting decimal to get rid of the excess.
+        return cls(dec.quantize(decimal.Decimal("0.000001")))
 
     def to_bytes(self):
         return struct.pack("<f", float(self.value))
@@ -125,14 +146,15 @@ class Float1(CorusData):
     """
 
     length = 2
+    value_type = decimal.Decimal
 
     def __init__(self, value: decimal.Decimal):
+        self.check_value_type(value)
         self.value = value
 
     @classmethod
     def from_bytes(cls, in_bytes: bytes):
-        if len(in_bytes) != 2:
-            raise ValueError(f"Float1 is 2 bytes long, Received {in_bytes!r}")
+        cls.check_in_data(in_bytes)
         val = (
             decimal.Decimal(int.from_bytes(in_bytes, cls.byte_order, signed=True)) / 100
         )
@@ -154,14 +176,15 @@ class Float2(CorusData):
     """
 
     length = 2
+    value_type = decimal.Decimal
 
     def __init__(self, value: decimal.Decimal):
+        self.check_value_type(value)
         self.value = value
 
     @classmethod
     def from_bytes(cls, in_bytes: bytes):
-        if len(in_bytes) != 2:
-            raise ValueError(f"Float2 is 2 bytes long, Received: {in_bytes!r}")
+        cls.check_in_data(in_bytes)
         val = int.from_bytes(in_bytes, cls.byte_order)
         num = val & 0b0111111111111111
         exp = ((val & 0b1000000000000000) >> 15) - 3
@@ -184,14 +207,15 @@ class Float3(CorusData):
     """
 
     length = 2
+    value_type = decimal.Decimal
 
     def __init__(self, value: decimal.Decimal):
+        self.check_value_type(value)
         self.value = value
 
     @classmethod
     def from_bytes(cls, in_bytes: bytes):
-        if len(in_bytes) != 2:
-            raise ValueError(f"Float3 is 2 bytes long, Received: {in_bytes!r}")
+        cls.check_in_data(in_bytes)
         val = int.from_bytes(in_bytes, cls.byte_order)
         num = val & 0b0011111111111111
         exp = ((val & 0b1100000000000000) >> 14) - 2
@@ -212,14 +236,15 @@ class Index(CorusData):
     The decimal part needs to be divided by the decimal factor of 100000000
     """
     length = 8
+    value_type = decimal.Decimal
 
     def __init__(self, value: decimal.Decimal):
+        self.check_value_type(value)
         self.value = value
 
     @classmethod
     def from_bytes(cls, in_bytes: bytes):
-        if len(in_bytes) != 8:
-            raise ValueError(f"Index is 8 bytes long, Received: {in_bytes!r}")
+        cls.check_in_data(in_bytes)
         num_bytes = in_bytes[:4]
         dec_bytes = in_bytes[4:]
         dec = decimal.Decimal(
@@ -239,7 +264,7 @@ class Null2(CorusData):
     length = 2
 
     def __init__(self, value=None):
-        self.value = value
+        self.value = None
 
     @classmethod
     def from_bytes(cls, in_bytes: bytes):
@@ -253,7 +278,7 @@ class Null4(CorusData):
     length = 4
 
     def __init__(self, value=None):
-        self.value = value
+        self.value = None
 
     @classmethod
     def from_bytes(cls, in_bytes: bytes):
@@ -265,12 +290,15 @@ class Null4(CorusData):
 
 class CorusString(CorusData):
     length = 8
+    value_type = str
 
     def __init__(self, value: str):
+        self.check_value_type(value)
         self.value = value
 
     @classmethod
     def from_bytes(cls, in_bytes: bytes):
+        cls.check_in_data(in_bytes)
         return cls(in_bytes.decode("latin-1"))
 
     def to_bytes(self):

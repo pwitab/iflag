@@ -1,50 +1,84 @@
+import attr
+
 from iflag import utils
-from typing import List
+from typing import List, Dict
+
 
 class CorusMessage:
-    ENCODING = "latin-1"
     """
-    Base class for iflag/corus messages.
+    Base class for corus messages.
     """
-
-    def to_representation(self):
-        raise NotImplementedError("Needs to be implemented in subclass")
 
     def to_bytes(self):
         """
-        Ensures the correct encoding to bytes.
         """
-        return self.to_representation().encode(self.ENCODING)
-
-    @classmethod
-    def from_representation(cls, string_data):
         raise NotImplementedError("Needs to be implemented in subclass")
 
-    @classmethod
-    def from_bytes(cls, bytes_data):
-        """
-        Ensures the correct decoding from  bytes.
-        """
-
-        return cls.from_representation(bytes_data.decode(cls.ENCODING))
 
 class ReadRequest(CorusMessage):
+    """
+    Class to structure a read request to the device.
+    """
+
     def __init__(self, parameter_ids: List[int]):
         self.parameter_ids = parameter_ids
 
     def to_bytes(self):
-        id_bytes = b''
+        id_bytes = b""
         for parameter_id in self.parameter_ids:
-            id_bytes += parameter_id.to_bytes(1, 'little')
+            id_bytes += parameter_id.to_bytes(1, "little")
 
-        size = len(self.parameter_ids).to_bytes(1, 'little')
-        message = (b'\x01\xbf' + size + id_bytes + b'\x03')
+        size = len(self.parameter_ids).to_bytes(1, "little")
+        message = b"\x01\xbf" + size + id_bytes + b"\x03"
         out_data = utils.add_crc(message)
         return out_data
 
+    def __repr__(self):
+        return f"{self.__class__.__name__}(parameter_ids={self.parameter_ids!r}"
 
+
+@attr.s(auto_attribs=True)
+class WriteData:
+    """Simple dataclass for managing write data"""
+    id: int
+    data: bytes
+
+    def to_bytes(self) -> bytes:
+        return self.id.to_bytes(1, 'little') + self.data
+
+
+class WriteRequest(CorusMessage):
+    """
+    Class to structure a write request to the device.
+    """
+
+    def __init__(self, data: List[WriteData]):
+        self.data = data
+
+    def to_bytes(self) -> bytes:
+        data_bytes = b"".join([item.to_bytes() for item in self.data])
+
+        size = len(data_bytes).to_bytes(1, "little")
+        message = b"\x01\xff" + size + data_bytes + b"\x03"
+        out_data = utils.add_crc(message)
+        return out_data
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}(data={self.data!r}"
 
 class ReadDatabaseRequest(CorusMessage):
+    """
+    Class to structure a read database request to device.
+    The session persistence feature has been turned off to make a more predictable
+    client implementation.
+    The "count records" feature has been turned off since it is not used.
+    The request will always request all data available in the database.
+
+    :param database: The database to read.
+    :param start: The date for the newest values to request
+    :param stop: The date for the oldest value to request
+    """
+
     db_id_map = {
         "interval": 0,
         "hourly": 1,
@@ -66,6 +100,10 @@ class ReadDatabaseRequest(CorusMessage):
 
     @property
     def db_byte(self) -> bytes:
+        """
+        Encodes the byte that indicates which db to read.
+        :return:
+        """
 
         b = self.db_id_map[self.database]
         if self.session_persistence:
@@ -87,3 +125,12 @@ class ReadDatabaseRequest(CorusMessage):
         )
         out_data = utils.add_crc(data)
         return out_data
+
+    def __repr__(self):
+        return (
+            f"{self.__class__.__name__}("
+            f"database={self.database!r}, "
+            f"start={self.start!r}, "
+            f"stop={self.stop!r}"
+            f")"
+        )

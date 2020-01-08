@@ -1,10 +1,9 @@
 import time
 import logging
-
 import socket
 from typing import Tuple, Optional
 
-from iflag import constants, utils
+from iflag import utils, exceptions
 
 logger = logging.getLogger(__name__)
 
@@ -20,83 +19,6 @@ class BaseTransport:
 
     def disconnect(self):
         raise NotImplemented("Must be defined in subclass")
-
-    def read_database(self):
-
-        data = b""
-        record_size: Optional[int] = None
-        read_next = True
-        is_first_frame = True
-        retry_count = 0
-        previous_frame_number: Optional[int] = None
-        current_frame_number = 0
-
-        while read_next:
-            in_bytes = b""
-
-            first_char = self.recv(1)
-            if not first_char == b"\x01":
-                raise Exception("first char is not SOH")
-
-            lenght = self.recv(1)
-            frame_data_lenght = int.from_bytes(bytes=lenght, byteorder="big")
-
-            frame_data = self.recv(frame_data_lenght)
-
-            # Framenumber is little endian!
-            frame_number_data = frame_data[:2]
-            current_frame_number = (
-                int.from_bytes(frame_number_data, "little") & 0b0111111111111111
-            )
-
-            end_char = self.recv(1)
-            if not end_char == b"\x03":
-                raise Exception("end char not ETX")
-
-            in_bytes += first_char + lenght + frame_data + end_char
-
-            if is_first_frame:
-                # record_size is only sent in first frame...
-                record_size = int.from_bytes(frame_data[2:3], "big")
-                data = data + frame_data[3:]
-
-            else:
-                data = data + frame_data[2:]
-                if current_frame_number != (previous_frame_number + 1):
-                    raise Exception("Data frames not received in order")
-
-            crc = self.recv(2)
-
-            total_data = in_bytes + crc
-            logger.debug(f"Total Data: {total_data!r}")
-
-            if not utils.crc_valid(in_bytes, crc):
-                # Send nack if crc is not valid
-                logger.debug(
-                    f"Message failed CRC validation. Message: {in_bytes!r}, "
-                    f"received_crc: {crc!r}"
-                )
-                if retry_count >= 3:
-                    raise Exception("Maximum amounts of retries done. Aborting.")
-                self.send(b"\x15")
-                retry_count += 1
-                continue
-
-            is_first_frame = False
-            is_last_frame = bool(
-                int.from_bytes(frame_number_data, "little") & 0b1000000000000000
-            )
-
-            if is_last_frame:
-                read_next = False
-            else:
-                self.send(b"\x06")
-                retry_count = 0  # Reset retry for a message part
-                previous_frame_number = current_frame_number
-
-        records = [data[i:i+record_size] for i in range(0, len(data), record_size)]
-        return records
-
 
     def simple_read(self, start_char, end_char, timeout=None):
         """
@@ -114,7 +36,9 @@ class BaseTransport:
             b = self.recv(1)
             duration = time.time() - start_time
             if duration > self.timeout:
-                raise TimeoutError(f"Read in {self.__class__.__name__} timed out")
+                raise exceptions.CommunicationError(
+                    f"Read in {self.__class__.__name__} timed out"
+                )
             if not start_char_received:
                 # is start char?
                 if b == _start_char:
@@ -132,7 +56,7 @@ class BaseTransport:
                     in_data += b
                     continue
 
-        logger.debug(f"Received {in_data!r} over transport: {self.__class__.__name__}")
+        logger.debug(f"Received {in_data!r} over {self.__class__.__name__}")
         return in_data
 
     def send(self, data: bytes):
@@ -142,7 +66,7 @@ class BaseTransport:
         :param data:
         """
         self._send(data)
-        logger.debug(f"Sent {data!r} over transport: {self.__class__.__name__}")
+        logger.debug(f"Sent {data!r} over {self.__class__.__name__}")
 
     def _send(self, data: bytes):
         """
@@ -168,9 +92,6 @@ class BaseTransport:
         """
         raise NotImplemented("Must be defined in subclass")
 
-class TransportError(Exception):
-    pass
-
 
 class TcpTransport(BaseTransport):
     """
@@ -190,8 +111,11 @@ class TcpTransport(BaseTransport):
 
         if not self.socket:
             self.socket = self._get_socket()
-        logger.debug(f"Connecting to {self.address}")
-        self.socket.connect(self.address)
+        logger.info(f"Connecting to {self.address}")
+        try:
+            self.socket.connect(self.address)
+        except (OSError, IOError, socket.timeout, socket.error) as e:
+            raise exceptions.CommunicationError from e
 
     def disconnect(self):
         """
@@ -199,6 +123,7 @@ class TcpTransport(BaseTransport):
         """
         self.socket.close()
         self.socket = None
+        logger.info(f"Closed connection to {self.address}")
 
     def _send(self, data: bytes):
         """
@@ -206,7 +131,10 @@ class TcpTransport(BaseTransport):
 
         :param data:
         """
-        self.socket.sendall(data)
+        try:
+            self.socket.sendall(data)
+        except (OSError, IOError, socket.timeout, socket.error) as e:
+            raise exceptions.CommunicationError from e
 
     def _recv(self, chars=1):
         """
@@ -217,9 +145,8 @@ class TcpTransport(BaseTransport):
         try:
             b = self.socket.recv(chars)
         except (OSError, IOError, socket.timeout, socket.error) as e:
-            raise TransportError from e
+            raise exceptions.CommunicationError from e
         return b
-
 
     def _get_socket(self):
         """
