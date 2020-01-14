@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 ### Security
 
+## [0.1.2] - 2020-01-14
+
+### Changed
+-  Separated value identification in parsing config for the different databases so that 
+it is possible to know if for example an average value is the monthly or hourly average.  
+
 ## [0.1.1] - 2020-01-08
 
 ### Fixed
