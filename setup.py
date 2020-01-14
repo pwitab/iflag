@@ -10,7 +10,7 @@ URL = "https://github.com/pwitab/iflag"
 EMAIL = "henrik@pwit.se"
 AUTHOR = "Henrik Palmlund Wahlgren @ Palmlund Wahlgren Innovative Technology AB"
 REQUIRES_PYTHON = ">=3.6"
-VERSION = "0.1.2"
+VERSION = "0.2.0"
 
 # What packages are required for this module to be executed?
 REQUIRED = ["attrs"]

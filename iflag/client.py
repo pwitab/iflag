@@ -105,13 +105,13 @@ class CorusClient:
 
         msg = WriteRequest(data=write_data)
         logger.info(f"Writing parameters: {parameters}")
-        with self._session() as session:
-            logger.info(f"Sending {msg}")
-            try:
-                session.transport.send(msg.to_bytes())
-                ack = session.transport.recv(1)
-            except (exceptions.ProtocolError, exceptions.CommunicationError) as e:
-                raise exceptions.CorusClientError from e
+
+        logger.info(f"Sending {msg}")
+        try:
+            self.transport.send(msg.to_bytes())
+            ack = self.transport.recv(1)
+        except (exceptions.ProtocolError, exceptions.CommunicationError) as e:
+            raise exceptions.CorusClientError from e
 
         if ack != b"\x06":
             logger.info(f"Received non ACK on sending {msg}")
@@ -140,32 +140,15 @@ class CorusClient:
         )
         msg = ReadDatabaseRequest(database=database, start=start, stop=stop)
 
-        with self._session() as session:
-            logger.info(f"Sending {msg!r}")
-            try:
-                session.transport.send(msg.to_bytes())
-                records = session._read_database_data()
-            except (exceptions.ProtocolError, exceptions.CommunicationError) as e:
-                raise exceptions.CorusClientError from e
+        logger.info(f"Sending {msg!r}")
+        try:
+            self.transport.send(msg.to_bytes())
+            records = self._read_database_data()
+        except (exceptions.ProtocolError, exceptions.CommunicationError) as e:
+            raise exceptions.CorusClientError from e
 
         data = [parser.parse(record) for record in records]
         return data
-
-    @contextmanager
-    def _session(self):
-        """
-        Simple internal session handling to make sure we connect properly and disconnect
-        properly at each interaction.
-        :return:
-        """
-        logger.info(f"Starting session to {self}")
-        self.transport.connect()
-        self._wakeup()
-        self._startup()
-        yield self
-        self._break()
-        self.transport.disconnect()
-        logger.info(f"Ended session to {self}")
 
     def _wakeup(self):
         """
@@ -184,7 +167,7 @@ class CorusClient:
             )
         logger.info(f"Received proper wakeup response")
 
-    def _startup(self):
+    def startup(self):
         """
         Similar sign on as IEC 62056-21. But no need to send a meter address. Device
         returns identification that has no special meaning. At least not over TCP.
@@ -192,6 +175,8 @@ class CorusClient:
         Then a "Password" exchange is done, but not really, just send the code PASS back
         and forth. So we just fast forward all of this to get to the correct state.
         """
+        self.transport.connect()
+        self._wakeup()
         logger.info(f"Initiating device communications")
         sign_on_message = b"/?!\r\n"
         self.transport.send(sign_on_message)
@@ -205,13 +190,14 @@ class CorusClient:
         if ack != b"\x06":
             raise exceptions.ProtocolError("Ack not received after sign on")
 
-    def _break(self):
+    def shutdown(self):
         """
         Sends a BREAK message to the device to indicate end of communication.
         """
         logger.info(f"Sending break message")
         msg = b"\x01B0\x03!1"  # pre calculated CRC.
         self.transport.send(msg)
+        self.transport.disconnect()
 
     def _read_parameters_by_id(self, parameters_ids: List[int]) -> bytes:
         """
@@ -223,10 +209,10 @@ class CorusClient:
         :return: bytes
         """
         msg = ReadRequest(parameters_ids)
-        with self._session() as session:
-            logger.info(f"Sending {msg!r}")
-            session.transport.send(msg.to_bytes())
-            read_data = session._read_response_data()
+
+        logger.info(f"Sending {msg!r}")
+        self.transport.send(msg.to_bytes())
+        read_data = self._read_response_data()
         return read_data
 
     def _read_response_data(self) -> bytes:

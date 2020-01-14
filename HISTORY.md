@@ -12,6 +12,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 ### Security
 
+## [0.2.0] - 2020-01-14
+
+### Removed
+- Removed internal session handling as it was in the way of optimizing running several actions
+directly after each other. Instead now you need to call `client.startup()` in the
+beginning and `client.shutdown()` when you are done. 
+
 ## [0.1.2] - 2020-01-14
 
 ### Changed
