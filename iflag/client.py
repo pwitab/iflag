@@ -17,6 +17,13 @@ class CorusClient:
     Corus client class for interfacing with meters using the Corus protocol.
     """
 
+    DATABASE_PARSE_CONFIG_MAP = {
+        "interval": parse.INTERVAL_DATABASE_PARSE_CONFIG,
+        "hourly": parse.HOURLY_DATABASE_PARSE_CONFIG,
+        "daily": parse.DAILY_DATABASE_PARSE_CONFIG,
+        "monthly": parse.MONTHLY_DATABASE_PARSE_CONFIG,
+    }
+
     def __init__(self, transport: BaseTransport):
         """
         :param transport: Transport class to use for the Client.
@@ -125,18 +132,13 @@ class CorusClient:
         and stop date is for the oldest values.
         Available databases are: interval, hourly, daily and monthly.
         """
-        database_parse_config_map = {
-            "interval": parse.INTERVAL_DATABASE_PARSE_CONFIG,
-            "hourly": parse.HOURLY_DATABASE_PARSE_CONFIG,
-            "daily": parse.DAILY_DATABASE_PARSE_CONFIG,
-            "monthly": parse.MONTHLY_DATABASE_PARSE_CONFIG,
-        }
-        if database not in database_parse_config_map.keys():
+
+        if database not in self.DATABASE_PARSE_CONFIG_MAP.keys():
             raise exceptions.CorusClientError(
                 f"Database {database} is not a valid database"
             )
         parser = parse.CorusDataParser(
-            parsing_config=database_parse_config_map[database]
+            parsing_config=self.DATABASE_PARSE_CONFIG_MAP[database]
         )
         msg = ReadDatabaseRequest(database=database, start=start, stop=stop)
 
