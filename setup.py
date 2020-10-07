@@ -86,7 +86,7 @@ setup(
     zip_safe=False,
     keywords=[],
     classifiers=[
-        "Development Status :: 3 - Stable",
+        "Development Status :: 5 - Production/Stable",
         "License :: OSI Approved :: BSD License",
         "Natural Language :: English",
         "Programming Language :: Python",
