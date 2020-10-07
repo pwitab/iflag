@@ -1,170 +1,78 @@
-import typing
+from typing import Sequence, Dict, Any
+from decimal import Decimal
 
-from iflag import data
-import attr
-
-from iflag.data import CorusData
+from iflag.data import IFlagParameter, DatabaseRecordParameter
 
 
-@attr.s(auto_attribs=True)
-class ParseConfigItem:
-    name: str
-    data_class: typing.Type[CorusData]
-
-
-INTERVAL_DATABASE_PARSE_CONFIG: typing.List[ParseConfigItem] = [
-    ParseConfigItem(name="record_duration", data_class=data.Byte),
-    ParseConfigItem(name="status", data_class=data.Byte),
-    ParseConfigItem(name="end_date", data_class=data.Date),
-    ParseConfigItem(name="consumption_unconverted_interval", data_class=data.Word),
-    ParseConfigItem(name="consumption_converted_interval", data_class=data.ULong),
-    ParseConfigItem(name="counter_unconverted_interval", data_class=data.Word),
-    ParseConfigItem(name="counter_converted_interval", data_class=data.ULong),
-    ParseConfigItem(name="temperature_minimum_interval", data_class=data.Float1),
-    ParseConfigItem(name="temperature_maximum_interval", data_class=data.Float1),
-    ParseConfigItem(name="temperature_average_interval", data_class=data.Float1),
-    ParseConfigItem(name="pressure_minimum_interval", data_class=data.Float2),
-    ParseConfigItem(name="pressure_maximum_interval", data_class=data.Float2),
-    ParseConfigItem(name="pressure_average_interval", data_class=data.Float2),
-    ParseConfigItem(name="flowrate_unconverted_minimum_interval", data_class=data.Float3),
-    ParseConfigItem(name="flowrate_unconverted_maximum_interval", data_class=data.Float3),
-    ParseConfigItem(name="flowrate_converted_minimum_interval", data_class=data.Float3),
-    ParseConfigItem(name="flowrate_converted_maximum_interval", data_class=data.Float3),
-    ParseConfigItem(name="none_data_1", data_class=data.Null4),
-    ParseConfigItem(name="flowrate_unconverted_average_interval", data_class=data.Float3),
-    ParseConfigItem(name="flowrate_converted_average_interval", data_class=data.Float3),
-    ParseConfigItem(name="start_date", data_class=data.Date),
-    ParseConfigItem(name="none_data_2", data_class=data.Null2),
-]
-
-# interval log and hourly log has the same structure
-HOURLY_DATABASE_PARSE_CONFIG: typing.List[ParseConfigItem] = [
-    ParseConfigItem(name="record_duration", data_class=data.Byte),
-    ParseConfigItem(name="status", data_class=data.Byte),
-    ParseConfigItem(name="end_date", data_class=data.Date),
-    ParseConfigItem(name="consumption_unconverted_hourly", data_class=data.Word),
-    ParseConfigItem(name="consumption_converted_hourly", data_class=data.ULong),
-    ParseConfigItem(name="counter_unconverted_hourly", data_class=data.Word),
-    ParseConfigItem(name="counter_converted_hourly", data_class=data.ULong),
-    ParseConfigItem(name="temperature_minimum_hourly", data_class=data.Float1),
-    ParseConfigItem(name="temperature_maximum_hourly", data_class=data.Float1),
-    ParseConfigItem(name="temperature_average_hourly", data_class=data.Float1),
-    ParseConfigItem(name="pressure_minimum_hourly", data_class=data.Float2),
-    ParseConfigItem(name="pressure_maximum_hourly", data_class=data.Float2),
-    ParseConfigItem(name="pressure_average_hourly", data_class=data.Float2),
-    ParseConfigItem(name="flowrate_unconverted_minimum_hourly", data_class=data.Float3),
-    ParseConfigItem(name="flowrate_unconverted_maximum_hourly", data_class=data.Float3),
-    ParseConfigItem(name="flowrate_converted_minimum_hourly", data_class=data.Float3),
-    ParseConfigItem(name="flowrate_converted_maximum_hourly", data_class=data.Float3),
-    ParseConfigItem(name="none_data_1", data_class=data.Null4),
-    ParseConfigItem(name="flowrate_unconverted_average_hourly", data_class=data.Float3),
-    ParseConfigItem(name="flowrate_converted_average_hourly", data_class=data.Float3),
-    ParseConfigItem(name="start_date", data_class=data.Date),
-    ParseConfigItem(name="none_data_2", data_class=data.Null2),
-]
-
-DAILY_DATABASE_PARSE_CONFIG: typing.List[ParseConfigItem] = [
-    ParseConfigItem(name="record_duration", data_class=data.Word),
-    ParseConfigItem(name="status", data_class=data.Byte),
-    ParseConfigItem(name="end_date", data_class=data.Date),
-    ParseConfigItem(name="consumption_unconverted_daily", data_class=data.EWord),
-    ParseConfigItem(name="consumption_converted_daily", data_class=data.EULong),
-    ParseConfigItem(name="counter_unconverted_daily", data_class=data.EWord),
-    ParseConfigItem(name="counter_converted_daily", data_class=data.EULong),
-    ParseConfigItem(name="temperature_minimum_daily", data_class=data.Float1),
-    ParseConfigItem(name="temperature_maximum_daily", data_class=data.Float1),
-    ParseConfigItem(name="temperature_average_daily", data_class=data.Float1),
-    ParseConfigItem(name="pressure_minimum_daily", data_class=data.Float2),
-    ParseConfigItem(name="pressure_maximum_daily", data_class=data.Float2),
-    ParseConfigItem(name="pressure_average_daily", data_class=data.Float2),
-    ParseConfigItem(name="flowrate_unconverted_minimum_daily", data_class=data.Float3),
-    ParseConfigItem(name="flowrate_unconverted_maximum_daily", data_class=data.Float3),
-    ParseConfigItem(name="flowrate_converted_minimum_daily", data_class=data.Float3),
-    ParseConfigItem(name="flowrate_converted_maximum_daily", data_class=data.Float3),
-    ParseConfigItem(name="none_data_1", data_class=data.Null4),
-    ParseConfigItem(name="flowrate_unconverted_average_daily", data_class=data.Float3),
-    ParseConfigItem(name="flowrate_converted_average_daily", data_class=data.Float3),
-    ParseConfigItem(name="start_date", data_class=data.Date),
-    ParseConfigItem(name="none_data_2", data_class=data.Null2),
-]
-
-MONTHLY_DATABASE_PARSE_CONFIG: typing.List[ParseConfigItem] = [
-    ParseConfigItem(name="record_duration", data_class=data.Word),
-    ParseConfigItem(name="status", data_class=data.Byte),
-    ParseConfigItem(name="end_date", data_class=data.Date),
-    ParseConfigItem(name="consumption_unconverted_monthly", data_class=data.EWord),
-    ParseConfigItem(name="consumption_converted_monthly", data_class=data.EULong),
-    ParseConfigItem(name="counter_unconverted_monthly", data_class=data.EWord),
-    ParseConfigItem(name="counter_converted_monthly", data_class=data.EULong),
-    ParseConfigItem(name="temperature_minimum_monthly", data_class=data.Float1),
-    ParseConfigItem(name="temperature_maximum_monthly", data_class=data.Float1),
-    ParseConfigItem(name="temperature_average_monthly", data_class=data.Float1),
-    ParseConfigItem(name="pressure_minimum_monthly", data_class=data.Float2),
-    ParseConfigItem(name="pressure_maximum_monthly", data_class=data.Float2),
-    ParseConfigItem(name="pressure_average_monthly", data_class=data.Float2),
-    ParseConfigItem(name="flowrate_unconverted_minimum_monthly", data_class=data.Float3),
-    ParseConfigItem(name="flowrate_unconverted_maximum_monthly", data_class=data.Float3),
-    ParseConfigItem(name="flowrate_converted_minimum_monthly", data_class=data.Float3),
-    ParseConfigItem(name="flowrate_converted_maximum_monthly", data_class=data.Float3),
-    ParseConfigItem(name="none_data_1", data_class=data.Null4),
-    ParseConfigItem(name="index_unconverted", data_class=data.Index),
-    ParseConfigItem(name="index_converted", data_class=data.Index),
-    ParseConfigItem(name="counter_unconverted_monthly", data_class=data.Index),
-    ParseConfigItem(name="counter_converted_monthly", data_class=data.Index),
-    ParseConfigItem(
-        name="consumption_unconverted_maximum_monthly", data_class=data.Word
-    ),
-    ParseConfigItem(
-        name="consumption_unconverted_maximum_monthly_date", data_class=data.Date
-    ),
-    ParseConfigItem(
-        name="consumption_converted_maximum_monthly", data_class=data.ULong
-    ),
-    ParseConfigItem(
-        name="consumption_converted_maximum_monthly_date", data_class=data.Date
-    ),
-    ParseConfigItem(name="flowrate_unconverted_average_monthly", data_class=data.Float3),
-    ParseConfigItem(name="flowrate_converted_average_monthly", data_class=data.Float3),
-    ParseConfigItem(name="start_date", data_class=data.Date),
-    ParseConfigItem(name="none_data_2", data_class=data.Null2),
-]
-
-
-class CorusDataParser:
+def parse_corus_response(
+    response_data: bytes, parameters: Sequence[IFlagParameter]
+) -> Dict[int, Any]:
     """
-    Parser class to handle Corus data conversion.
+    Converts corus response bytes data to a result dict by using the parameter id as
+    key.
 
+    :param parameters: Sequence of IFlagParameters. The position of the elements
+        corresponds to the position of the data in response_data.
+    :param response_data: bytes of corus data
+    :return: dict
     """
+    correct_length = sum([parameter.data_class.LENGTH for parameter in parameters])
+    if len(response_data) != correct_length:
+        raise ValueError(
+            f"In data is not of correct length. Should be {correct_length} "
+            f"but is {len(response_data)}"
+        )
+    out_data = {}
+    index = 0
+    for parameter in parameters:
+        end_index = index + parameter.data_class.LENGTH
+        _data = response_data[index:end_index]
+        index = end_index
+        data_instance = parameter.data_class.from_bytes(_data)
+        value = data_instance.value
+        if value is None:
+            continue
+        out_data[parameter.id] = value
 
-    def __init__(self, parsing_config: typing.Sequence[ParseConfigItem]):
-        self.parsing_config = parsing_config
+    return out_data
 
-    @property
-    def parse_length(self) -> int:
-        """
-        Calculates how long the data should be
-        :return: data length
-        """
-        return sum([config.data_class.length for config in self.parsing_config])
 
-    def parse(self, in_data: bytes) -> dict:
-        """
-        Converts corus data to a result dict by using the parsing config.
-        :param in_data: in_data
-        :return:
-        """
-        if len(in_data) != self.parse_length:
-            raise ValueError(
-                f"In data is not of correct length. Should be {self.parse_length} "
-                f"but is {len(in_data)}"
-            )
-        out_data = {}
-        index = 0
-        for item in self.parsing_config:
-            end_index = index + item.data_class.length
-            data = in_data[index:end_index]
-            index = end_index
-            data_instance = item.data_class.from_bytes(data)
-            out_data[item.name] = data_instance.value
+def parse_corus_database_record(
+    record: bytes,
+    parameters: Sequence[DatabaseRecordParameter],
+    input_pulse_weight: Decimal,
+) -> Dict[str, Any]:
+    """
+    Converts a corus database record to a result dict with the name of the
+    DatabaseRecordParameter as key.
+    :param input_pulse_weight: The impulse weight of the meter to scale the result if
+        needed
+    :param parameters: Sequence of DatabaseRecordParameters. The positions in the list reflects the data position in the record data.
+    :param record: The record data in bytes.
+    :return:
+    """
+    correct_length = sum([parameter.data_class.LENGTH for parameter in parameters])
+    if len(record) != correct_length:
+        raise ValueError(
+            f"In data is not of correct length. Should be {correct_length} "
+            f"but is {len(record)}"
+        )
+    out_data = {}
+    index = 0
+    for parameter in parameters:
+        end_index = index + parameter.data_class.LENGTH
+        data = record[index:end_index]
+        index = end_index
+        data_instance = parameter.data_class.from_bytes(data)
+        value = data_instance.value
+        if value is None:
+            continue
+        if parameter.affected_by_pulse_input:
+            value = value * input_pulse_weight
 
-        return out_data
+        if parameter.multiplied:
+            value = value / parameter.multiplied
+
+        out_data[parameter.name] = value
+
+    return out_data

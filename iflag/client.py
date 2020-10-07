@@ -1,15 +1,17 @@
 import logging
-from contextlib import contextmanager
+from datetime import datetime
+from decimal import Decimal
 
 from iflag.transport import TcpTransport, BaseTransport
 from iflag.messages import ReadDatabaseRequest, ReadRequest, WriteData, WriteRequest
 from iflag import parse, utils, exceptions
-from iflag.data import PARAMETERS_BY_NAME
+from iflag.data import IFlagParameter, DatabaseRecordParameter, CorusString, Float
 
-from typing import Tuple, List
-
+from typing import Tuple, List, Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
+
+DatabaseConfig = Dict[str, Dict[int, List[DatabaseRecordParameter]]]
 
 
 class CorusClient:
@@ -17,102 +19,98 @@ class CorusClient:
     Corus client class for interfacing with meters using the Corus protocol.
     """
 
-    DATABASE_PARSE_CONFIG_MAP = {
-        "interval": parse.INTERVAL_DATABASE_PARSE_CONFIG,
-        "hourly": parse.HOURLY_DATABASE_PARSE_CONFIG,
-        "daily": parse.DAILY_DATABASE_PARSE_CONFIG,
-        "monthly": parse.MONTHLY_DATABASE_PARSE_CONFIG,
-    }
+    DATABASES = {"interval", "hourly", "daily", "monthly"}
 
-    def __init__(self, transport: BaseTransport):
+    def __init__(
+        self,
+        transport: BaseTransport,
+        database_layout: Optional[DatabaseConfig] = None,
+        input_pulse_weight: Optional[Decimal] = None,
+    ):
         """
         :param transport: Transport class to use for the Client.
         """
+        self.database_layout = database_layout
         self.transport = transport
-
-    def __repr__(self):
-        return f"{self.__class__.__name__}(transport={self.transport!r})"
+        self._input_pulse_weight: Decimal = input_pulse_weight
 
     @classmethod
-    def with_tcp_transport(cls, address: Tuple[str, int]):
+    def with_tcp_transport(
+        cls,
+        address: Tuple[str, int],
+        database_layout: Optional[DatabaseConfig] = None,
+        input_pulse_weight: Optional[Decimal] = None,
+    ):
         """
         Creates a CorusClient with a TCP transport.
 
+        :param input_pulse_weight: A decimal value that is used to extract correct value
+                from some database record parameters.
+        :param database_layout: Dict allowing to specify how the database records
+               are constructed and how they are interpreted.
         :param address: TCP/IP address and port tuple
-        :return:
         """
-        return cls(transport=TcpTransport(address))
+        return cls(
+            transport=TcpTransport(address),
+            database_layout=database_layout,
+            input_pulse_weight=input_pulse_weight,
+        )
 
-    def read_parameters(self, parameters: List[str]) -> dict:
+    def read_parameters(self, parameters: List[IFlagParameter]) -> dict:
         """
         Reads parameters from the device.
         :param parameters: List of parameters to read.
         :return: dict with all parameters that where requested.
         """
-        # verify valid parameters:
-        if not all(
-            [(parameter in PARAMETERS_BY_NAME.keys()) for parameter in parameters]
-        ):
-            raise exceptions.CorusClientError(
-                f"parameter_names contains unknown parameters, check documentation "
-                f"for proper parameter names."
-            )
 
-        parameter_ids = [PARAMETERS_BY_NAME[parameter].id for parameter in parameters]
-        parse_config = [
-            parse.ParseConfigItem(
-                name=PARAMETERS_BY_NAME[parameter].name,
-                data_class=PARAMETERS_BY_NAME[parameter].data_class,
-            )
-            for parameter in parameters
-        ]
-        parser = parse.CorusDataParser(parsing_config=parse_config)
+        parameter_ids = [parameter.id for parameter in parameters]
 
         logger.info(f"Reading parameters: {parameters}")
         try:
             in_data = self._read_parameters_by_id(parameter_ids)
         except (exceptions.ProtocolError, exceptions.CommunicationError) as e:
             raise exceptions.CorusClientError from e
-
-        data = parser.parse(in_data)
+        data = parse.parse_corus_response(in_data, parameters)
+        logger.info(f"Received parameter data: {data}")
         return data
 
-    def write_parameters(self, parameters: dict) -> None:
+    def get_parameter_map_id(self) -> str:
+        """
+        All firmware versions have the parameter map id located at 0x5E. 
+        It consists of FL_XXXXX where XXXX is the mapping id. In mapping files 
+        the id can consists of both lower and upper case letters but to unify it this 
+        function will only return lower case ids.
+        """
+
+        value: str = self.read_parameters(
+            [IFlagParameter(id=0x5E, data_class=CorusString)]
+        )[0x5E]
+        map_id = value.split("_")[1]
+        return map_id
+
+    @property
+    def input_pulse_weight(self):
+        if self._input_pulse_weight is None:
+            logger.info("Reading Impulse Weight from Meter")
+            self._input_pulse_weight = self.read_parameters(
+                [IFlagParameter(1, data_class=Float)]
+            )[1]
+            logger.info(f"Set input_pulse_weight={self._input_pulse_weight} on client")
+        return self._input_pulse_weight
+
+    def write_parameters(self, parameters: List[Tuple[IFlagParameter, Any]]) -> None:
         """
         Writes parameters to the device.
-        :param parameters: Dict with parameters names as keys and parameter value as
-            value
+        :param parameters: List of tuples of the IFlagParameter and the values to write
         :return:
         """
-        if not all(
-            [
-                (parameter in PARAMETERS_BY_NAME.keys())
-                for parameter in parameters.keys()
-            ]
-        ):
-            raise exceptions.CorusClientError(
-                f"parameter_names contains unknown parameters, check documentation "
-                f"for proper parameter names."
-            )
-
-        # Check if writeable
-        for parameter in parameters:
-            if not PARAMETERS_BY_NAME[parameter].write:
-                raise exceptions.DataError(f"Parameter {parameter} is not writable")
 
         write_data = [
-            WriteData(
-                id=PARAMETERS_BY_NAME[parameter].id,
-                data=PARAMETERS_BY_NAME[parameter]
-                .data_class(parameters[parameter])
-                .to_bytes(),
-            )
-            for parameter in parameters.keys()
+            WriteData(id=parameter.id, data=parameter.data_class(value).to_bytes())
+            for parameter, value in parameters
         ]
-
         msg = WriteRequest(data=write_data)
         logger.info(f"Writing parameters: {parameters}")
-
         logger.info(f"Sending {msg}")
         try:
             self.transport.send(msg.to_bytes())
@@ -124,22 +122,41 @@ class CorusClient:
             logger.info(f"Received non ACK on sending {msg}")
             raise exceptions.CommunicationError(f"Error in sending {msg}")
 
-        logger.info(f"Parameters {parameters} received and accepted")
+        logger.info(f"Parameters {parameters} sent and accepted")
 
-    def read_database(self, start=None, stop=None, database="interval") -> List[dict]:
+    def read_database(
+        self,
+        database: str,
+        start: Optional[datetime] = None,
+        stop: Optional[datetime] = None,
+        input_pulse_weight: Optional[Decimal] = None,
+        database_layout: Optional[DatabaseConfig] = None,
+    ) -> List[Dict[str, Any]]:
         """
         The database is read from the top and down. So start date is the latest value
         and stop date is for the oldest values.
         Available databases are: interval, hourly, daily and monthly.
         """
 
-        if database not in self.DATABASE_PARSE_CONFIG_MAP.keys():
+        if database not in self.DATABASES:
             raise exceptions.CorusClientError(
-                f"Database {database} is not a valid database"
+                f"Database {database!r} is not a valid database"
             )
-        parser = parse.CorusDataParser(
-            parsing_config=self.DATABASE_PARSE_CONFIG_MAP[database]
-        )
+
+        pulse_weight = input_pulse_weight or self.input_pulse_weight
+        if pulse_weight is None:
+            raise exceptions.CorusClientError(
+                f"Trying to read database records without a predefined pulse weight. "
+                f"Define it on client init or in the read_database call."
+            )
+
+        _database_layout = database_layout or self.database_layout
+        if _database_layout is None:
+            raise exceptions.CorusClientError(
+                f"Trying to read database records without a predefined database layout."
+                f"Define it on client init or in the read_database call."
+            )
+
         msg = ReadDatabaseRequest(database=database, start=start, stop=stop)
 
         logger.info(f"Sending {msg!r}")
@@ -149,8 +166,27 @@ class CorusClient:
         except (exceptions.ProtocolError, exceptions.CommunicationError) as e:
             raise exceptions.CorusClientError from e
 
-        data = [parser.parse(record) for record in records]
-        return data
+        if not records:
+            return []
+
+        record_length = len(records[0])
+        try:
+            record_parameters = _database_layout[database][record_length]
+            return [
+                parse.parse_corus_database_record(
+                    record, record_parameters, pulse_weight
+                )
+                for record in records
+            ]
+
+        except KeyError:
+            logger.error(
+                f"No record definition in {database!r} database with length "
+                f"of {record_length}"
+            )
+            raise exceptions.CorusClientError(
+                "Unable to find parsing config for database that fit the record length"
+            )
 
     def _wakeup(self):
         """
@@ -182,8 +218,8 @@ class CorusClient:
         logger.info(f"Initiating device communications")
         sign_on_message = b"/?!\r\n"
         self.transport.send(sign_on_message)
-        ident = self.transport.simple_read(start_char="/", end_char="\x0a")
-        ack_message = b"\x06\x30\x37\x30\x0d\x0a"
+        ident = self.transport.simple_read(start_char=b"/", end_char=b"\x0a")
+        ack_message = b"\x06\x30\x37\x36\x0d\x0a"
         self.transport.send(ack_message)
         pass_msg = self.transport.recv(6)
         # TODO: check the crc
@@ -261,7 +297,7 @@ class CorusClient:
         more detail in the protocol documentation.
         :return: Response data
         """
-        data = b""
+        _data = b""
         record_size: int = 0
         read_next = True
         is_first_frame = True
@@ -303,10 +339,10 @@ class CorusClient:
                     raise exceptions.ProtocolError(
                         "Empty response"
                     )  # TODO: better handling
-                data = data + frame_data[3:]
+                _data = _data + frame_data[3:]
 
             else:
-                data = data + frame_data[2:]
+                _data = _data + frame_data[2:]
                 if current_frame_number != (previous_frame_number + 1):
                     raise exceptions.ProtocolError("Data frames not received in order")
 
@@ -314,7 +350,7 @@ class CorusClient:
 
             total_data = in_bytes + crc
 
-            logger.debug(f"Received data: {total_data!r}")
+            logger.debug(f"Received data: {total_data.hex()!r}")
 
             if not utils.crc_valid(in_bytes, crc):
                 # Send nack if crc is not valid
@@ -342,5 +378,14 @@ class CorusClient:
                 retry_count = 0  # Reset retry for a message part
                 previous_frame_number = current_frame_number
 
-        records = [data[i : i + record_size] for i in range(0, len(data), record_size)]
+        records = [
+            _data[i : i + record_size] for i in range(0, len(_data), record_size)
+        ]
         return records
+
+    def __repr__(self):
+        return (
+            f"{self.__class__.__name__}(transport={self.transport!r}, "
+            f"database_layout={self.database_layout!r}, "
+            f"input_pulse_weight={self._input_pulse_weight!r})"
+        )

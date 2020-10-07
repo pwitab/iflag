@@ -20,13 +20,12 @@ class BaseTransport:
     def disconnect(self):
         raise NotImplemented("Must be defined in subclass")
 
-    def simple_read(self, start_char, end_char, timeout=None):
+    def simple_read(
+        self, start_char: bytes, end_char: bytes, timeout: Optional[int] = None
+    ) -> bytes:
         """
         A more flexible read for use with some messages.
         """
-        _start_char = utils.ensure_bytes(start_char)
-        _end_char = utils.ensure_bytes(end_char)
-
         in_data = b""
         start_char_received = False
         timeout = timeout or self.timeout
@@ -35,13 +34,13 @@ class BaseTransport:
         while True:
             b = self.recv(1)
             duration = time.time() - start_time
-            if duration > self.timeout:
+            if duration > timeout:
                 raise exceptions.CommunicationError(
                     f"Read in {self.__class__.__name__} timed out"
                 )
             if not start_char_received:
                 # is start char?
-                if b == _start_char:
+                if b == start_char:
                     in_data += b
                     start_char_received = True
                     continue
@@ -49,7 +48,7 @@ class BaseTransport:
                     continue
             else:
                 # is end char?
-                if b == _end_char:
+                if b == end_char:
                     in_data += b
                     break
                 else:
@@ -76,7 +75,7 @@ class BaseTransport:
         """
         raise NotImplemented("Must be defined in subclass")
 
-    def recv(self, chars):
+    def recv(self, chars) -> bytes:
         """
         Will receive data over the transport.
 
@@ -84,7 +83,7 @@ class BaseTransport:
         """
         return self._recv(chars)
 
-    def _recv(self, chars):
+    def _recv(self, chars) -> bytes:
         """
         Transport dependant sending functionality.
 
@@ -102,7 +101,7 @@ class TcpTransport(BaseTransport):
 
         super().__init__(timeout=timeout)
         self.address = address
-        self.socket = self._get_socket()
+        self.socket: Optional[socket.socket] = self._get_socket()
 
     def connect(self):
         """
@@ -136,7 +135,7 @@ class TcpTransport(BaseTransport):
         except (OSError, IOError, socket.timeout, socket.error) as e:
             raise exceptions.CommunicationError from e
 
-    def _recv(self, chars=1):
+    def _recv(self, chars: int = 1) -> bytes:
         """
         Receives data from the socket.
 
@@ -148,7 +147,7 @@ class TcpTransport(BaseTransport):
             raise exceptions.CommunicationError from e
         return b
 
-    def _get_socket(self):
+    def _get_socket(self) -> socket.socket:
         """
         Create a correct socket.
         """
