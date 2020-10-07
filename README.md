@@ -130,7 +130,7 @@ to access data. SEVC-D parameters of I-FLAG is not supported.
 
 ### Read parameters:
 
-``python
+```python
 
 from iflag import CorusClient
 from iflag.data import CorusString, Index
@@ -172,9 +172,10 @@ client.write_parameters([(IFlagParameter(id=106, data_class=Date), datetime.now(
 ```python
 from iflag import CorusClient
 from datetime import datetime, timedelta
+
 client = CorusClient.with_tcp_transport(address=('localhost', 4000), database_layout=MY_DATABASE_LAYOUT)
 client.read_database(database='interval', start=datetime.now(), stop=(datetime.now() - timedelta(hours=4)))
-````
+```
 
  - When reading databases you will need to know the `input_pulse_weight`. If it is not 
  set on the client at initiation or on the `read_database` call the client will read it 
