@@ -12,6 +12,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 ### Security
 
+## [1.0.0] - 2020-10-07
+
+### Changed
+ - Since different Corus firmware version have different parameter ids and different 
+   data database layouts the library is rewritten to be less opinionated and work with 
+   all firmwares. This means the user needs to know what ID represents what data and 
+   how it is interpreted and how databases the they will read are structured.
+  
 ## [0.2.0] - 2020-01-14
 
 ### Removed
