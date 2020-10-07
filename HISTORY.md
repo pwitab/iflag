@@ -12,6 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 ### Security
 
+## [1.0.1] - 2020-10-07
+
+### Fixed
+- Index9 was not parsed correctly due to misinterpretation of documentation.
+
 ## [1.0.0] - 2020-10-07
 
 ### Changed
