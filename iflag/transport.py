@@ -29,7 +29,7 @@ class BaseTransport:
         in_data = b""
         start_char_received = False
         timeout = timeout or self.timeout
-        duration = 0
+        duration = 0.0
         start_time = time.time()
         while True:
             b = self.recv(1)
@@ -101,15 +101,14 @@ class TcpTransport(BaseTransport):
 
         super().__init__(timeout=timeout)
         self.address = address
-        self.socket: Optional[socket.socket] = self._get_socket()
+        self.socket: socket.socket
+
 
     def connect(self):
         """
         Connects the socket to the device network interface.
         """
-
-        if not self.socket:
-            self.socket = self._get_socket()
+        self.socket = self._get_socket()
         logger.info(f"Connecting to {self.address}")
         try:
             self.socket.connect(self.address)
@@ -118,10 +117,9 @@ class TcpTransport(BaseTransport):
 
     def disconnect(self):
         """
-        Closes and removes the socket.
+        Closes the socket.
         """
         self.socket.close()
-        self.socket = None
         logger.info(f"Closed connection to {self.address}")
 
     def _send(self, data: bytes):

@@ -32,7 +32,7 @@ class CorusClient:
         """
         self.database_layout = database_layout
         self.transport = transport
-        self._input_pulse_weight: Decimal = input_pulse_weight
+        self._input_pulse_weight: Optional[Decimal] = input_pulse_weight
 
     @classmethod
     def with_tcp_transport(

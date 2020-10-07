@@ -1,4 +1,4 @@
-import datetime
+from datetime import datetime
 from decimal import Decimal
 import struct
 from functools import reduce
@@ -81,7 +81,7 @@ class CorusDataABC(abc.ABC):
 
 class Date(CorusDataABC):
     LENGTH = 4
-    VALUE_TYPE = datetime.datetime
+    VALUE_TYPE = datetime
 
     @classmethod
     def to_python(cls, in_bytes: bytes):
