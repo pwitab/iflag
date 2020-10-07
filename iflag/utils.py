@@ -130,7 +130,7 @@ def ensure_bytes(data):
     Utility to make sure a value is in bytes or encode it.
     """
     if isinstance(data, str):
-        return data.encode('latin-1')
+        return data.encode("latin-1")
     elif isinstance(data, bytes):
         return data
     else:

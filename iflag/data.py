@@ -1,173 +1,214 @@
 import datetime
-import decimal
+from decimal import Decimal
 import struct
+from functools import reduce
+
 from iflag import utils, exceptions
-import typing
+from typing import Optional, Type, Any, Union
 import attr
+import abc
 
 
-class CorusData:
-    byte_order = "little"
-    length = 1
-    value_type = int
+def float_to_decimal(_float: Union[int, float]) -> Decimal:
+    """
+    On a 64bit system you will get problem with extra "garbage" bits/decimals in
+    conversion from 32 bits to 64 bit.
+    So we quantize the resulting decimal to fixed precision to get rid of the excess.
+    And to not have tons of extra precision we also normalize the value.
+    :param _float: float or int to convert to Decimal
+    :return:
+    """
+    return Decimal().from_float(_float).quantize(Decimal("0.000001")).normalize()
+
+
+class CorusDataABC(abc.ABC):
+    BYTE_ORDER: str = "little"
+    LENGTH: int = 1
+    VALUE_TYPE: Type = int
+
+    def __init__(self, value: Optional[Any]):
+        self.check_value_type(value)
+        self.value = value
 
     @classmethod
     def check_in_data(cls, in_data):
-        if len(in_data) != cls.length:
+        if len(in_data) != cls.LENGTH:
             raise ValueError(
-                f"{cls.__class__.__name__} can only be of length {cls.length}, "
+                f"{cls.__class__.__name__} can only be of length {cls.LENGTH}, "
                 f"received data {in_data!r} of length {len(in_data)}"
             )
 
+    @classmethod
+    def is_none_data(cls, in_data: bytes) -> bool:
+        """
+        When data is returned as none data all the length is "ones" (ex. 0xffff)
+        :param in_data:
+        :return:
+        """
+        return in_data == (b"\xff" * cls.LENGTH)
+
     def check_value_type(self, value):
-        if not isinstance(value, self.value_type):
+        if value is None:
+            return
+        if not isinstance(value, self.VALUE_TYPE):
             raise exceptions.DataError(
                 f"Class {self.__class__.__name__} need a value of "
-                f"type {self.value_type}"
+                f"type {self.VALUE_TYPE}"
             )
 
     @classmethod
-    def from_bytes(cls, in_bytes: bytes):
-        raise NotImplementedError("from_bytes must be implemented in subclass")
+    @abc.abstractmethod
+    def to_python(cls, in_bytes: bytes):
+        raise NotImplementedError("to_python must be implemented in subclass")
 
-    def to_bytes(self):
-        raise NotImplementedError("to_bytes must be implemented in subclass")
-
-
-class Date(CorusData):
-    length = 4
-    value_type = datetime.datetime
-
-    def __init__(self, value: datetime.datetime):
-        self.check_value_type(value)
-        self.value = value
+    @abc.abstractmethod
+    def from_python(self, value: Any):
+        raise NotImplementedError("from_python must be implemented in subclass")
 
     @classmethod
     def from_bytes(cls, in_bytes: bytes):
         cls.check_in_data(in_bytes)
-        date = utils.byte_to_date(in_bytes)
-        return cls(value=date)
+        if cls.is_none_data(in_bytes):
+            return cls(value=None)
+        return cls(value=cls.to_python(in_bytes))
 
     def to_bytes(self):
-        return utils.date_to_byte(self.value)
+        if self.value is None:
+            return b"\xff" * self.LENGTH
+        else:
+            return self.from_python(self.value)
 
 
-class Integer(CorusData):
-    """
-    Base for integers.
-    """
-
-    length = 1
-    value_type = int
-
-    def __init__(self, value: int):
-        self.check_value_type(value)
-        self.value = value
+class Date(CorusDataABC):
+    LENGTH = 4
+    VALUE_TYPE = datetime.datetime
 
     @classmethod
-    def from_bytes(cls, in_bytes: bytes):
-        cls.check_in_data(in_bytes)
-        return cls(value=int.from_bytes(in_bytes, cls.byte_order))
+    def to_python(cls, in_bytes: bytes):
+        return utils.byte_to_date(in_bytes)
 
-    def to_bytes(self):
-        return self.value.to_bytes(int(self.length), self.byte_order)
+    def from_python(self, value: datetime):
+        return utils.date_to_byte(value)
 
 
-class Byte(Integer):
+class Byte(CorusDataABC):
     """
     8 bit unsigned integer. mimic of base class
     """
 
-    pass
+    LENGTH = 1
+    VALUE_TYPE = int
+
+    @classmethod
+    def to_python(cls, in_bytes: bytes):
+        return struct.unpack("<B", in_bytes)[0]
+
+    def from_python(self, value: int):
+        return struct.pack("<B", value)
 
 
-class EWord(Integer):
+class EWord(CorusDataABC):
     """
     24 bit unsigned integer
     """
 
-    length = 3
+    LENGTH = 3
+    VALUE_TYPE = Decimal
+
+    @classmethod
+    def to_python(cls, in_bytes: bytes):
+        in_bytes = in_bytes + b"\x00"  # padding 1 bytes so it is possible to use struct
+        return float_to_decimal(struct.unpack("<I", in_bytes)[0])
+
+    def from_python(self, value: Decimal):
+        return struct.pack("<I", int(value))[:-1]  # removed last unused byte.
 
 
-class Word(Integer):
+class Word(CorusDataABC):
     """
-    16 bit integer
-    """
-
-    length = 2
-
-
-class ULong(Integer):
-    """
-    32 bit integer
-    """
-
-    length = 4
-
-
-class EULong(Integer):
-    """
-    40 bit integer
+    16 bit unsigned integer
     """
 
-    length = 5
+    LENGTH = 2
+    VALUE_TYPE = Decimal
+
+    @classmethod
+    def to_python(cls, in_bytes: bytes):
+        return float_to_decimal(struct.unpack("<H", in_bytes)[0])
+
+    def from_python(self, value: Decimal):
+        return struct.pack("<H", int(value))
 
 
-class Float(CorusData):
+class ULong(CorusDataABC):
+    """
+    32 bit unsigned integer
+    """
+
+    LENGTH = 4
+    VALUE_TYPE = Decimal
+
+    @classmethod
+    def to_python(cls, in_bytes: bytes):
+        return float_to_decimal(struct.unpack("<I", in_bytes)[0])
+
+    def from_python(self, value: Decimal):
+        return struct.pack("<I", int(value))
+
+
+class EULong(CorusDataABC):
+    """
+    40 bit unsigned integer
+    """
+
+    LENGTH = 5
+    VALUE_TYPE = Decimal
+
+    @classmethod
+    def to_python(cls, in_bytes: bytes):
+        in_bytes = in_bytes + b"\x00\x00\x00"  # pad with 3 bytes to use struct
+        return float_to_decimal(struct.unpack("<Q", in_bytes)[0])
+
+    def from_python(self, value: Decimal):
+        return struct.pack("<Q", int(value))[:-3]
+
+
+class Float(CorusDataABC):
     """
     32 bit float
     """
 
-    length = 4
-    value_type = decimal.Decimal
-
-    def __init__(self, value: decimal.Decimal):
-        self.check_value_type(value)
-        self.value = value
+    LENGTH = 4
+    VALUE_TYPE = Decimal
 
     @classmethod
-    def from_bytes(cls, in_bytes: bytes):
-        cls.check_in_data(in_bytes)
-        dec = decimal.Decimal(str(struct.unpack("<f", in_bytes)[0]))
-        # On a 64bit system you will get problem with extra "garbage" bits/decimals in
-        # conversion from 32 bits to 64 bit.
-        # So we quantize the resulting decimal to get rid of the excess.
-        return cls(dec.quantize(decimal.Decimal("0.000001")))
+    def to_python(cls, in_bytes: bytes):
+        return float_to_decimal(struct.unpack("<f", in_bytes)[0])
 
-    def to_bytes(self):
-        return struct.pack("<f", float(self.value))
+    def from_python(self, value: Decimal):
+        return struct.pack("<f", float(value))
 
 
-class Float1(CorusData):
+class Float1(CorusDataABC):
     """
     16 bit signed integer with multiplier coefficient of 100.
     Only used for temperatures in the database.
     Ex. -1612 0 -16.12 degrees (C or F)
     """
 
-    length = 2
-    value_type = decimal.Decimal
-
-    def __init__(self, value: decimal.Decimal):
-        self.check_value_type(value)
-        self.value = value
+    LENGTH = 2
+    VALUE_TYPE = Decimal
 
     @classmethod
-    def from_bytes(cls, in_bytes: bytes):
-        cls.check_in_data(in_bytes)
-        val = (
-            decimal.Decimal(int.from_bytes(in_bytes, cls.byte_order, signed=True)) / 100
-        )
-        return cls(value=val)
+    def to_python(cls, in_bytes: bytes):
 
-    def to_bytes(self):
-        raise NotImplementedError(
-            "No need to make bytes of Float1 values since they "
-            "are only available to read in database"
-        )
+        return float_to_decimal(struct.unpack("<h", in_bytes)[0]) / Decimal("100")
+
+    def from_python(self, value: Decimal):
+        return struct.pack("<h", int(value))
 
 
-class Float2(CorusData):
+class Float2(CorusDataABC):
     """
     16 bit structure containing value and exponent.
     bit 0-14 = number, bit 15 = exponent
@@ -175,30 +216,28 @@ class Float2(CorusData):
     Only used for pressure in database.
     """
 
-    length = 2
-    value_type = decimal.Decimal
-
-    def __init__(self, value: decimal.Decimal):
-        self.check_value_type(value)
-        self.value = value
+    LENGTH = 2
+    VALUE_TYPE = Decimal
 
     @classmethod
-    def from_bytes(cls, in_bytes: bytes):
-        cls.check_in_data(in_bytes)
-        val = int.from_bytes(in_bytes, cls.byte_order)
+    def to_python(cls, in_bytes: bytes):
+        val = struct.unpack("<H", in_bytes)[0]
         num = val & 0b0111111111111111
         exp = ((val & 0b1000000000000000) >> 15) - 3
-        dec_input = decimal.Decimal(f"{num}e{exp}")
-        return cls(value=dec_input)
+        return Decimal(f"{num}e{exp}")
 
-    def to_bytes(self):
-        raise NotImplementedError(
-            "No need to make bytes of Float2 values since they "
-            "are only available to read in database"
-        )
+    def from_python(self, value: Decimal):
+        # TODO: Tons of edge cases.
+        sign, digits, exponent = value.as_tuple()
+        if -3 > exponent > -2:
+            raise ValueError("Exponent part can only be -3 or -2")
+        integer = reduce(lambda rst, x: rst * 10 + x, digits)
+        encoded_exponent = (exponent + 3) << 15
+
+        return struct.pack("<H", (integer + encoded_exponent))
 
 
-class Float3(CorusData):
+class Float3(CorusDataABC):
     """
     16 bit structure containing value and exponent.
     bit 0-13 = number, bit 14-15 = exponent
@@ -206,228 +245,135 @@ class Float3(CorusData):
     Only used for pressure in database.
     """
 
-    length = 2
-    value_type = decimal.Decimal
-
-    def __init__(self, value: decimal.Decimal):
-        self.check_value_type(value)
-        self.value = value
+    LENGTH = 2
+    VALUE_TYPE = Decimal
 
     @classmethod
-    def from_bytes(cls, in_bytes: bytes):
-        cls.check_in_data(in_bytes)
-        val = int.from_bytes(in_bytes, cls.byte_order)
+    def to_python(cls, in_bytes: bytes):
+        val = struct.unpack("<H", in_bytes)[0]
         num = val & 0b0011111111111111
-        exp = ((val & 0b1100000000000000) >> 14) - 2
-        dec_input = decimal.Decimal(f"{num}e{exp}")
-        return cls(value=dec_input)
+        exp = ((val & 0b1100000000000000) >> 14) - 1
+        return Decimal(f"{num}e{exp}")
 
-    def to_bytes(self):
-        raise NotImplementedError(
-            "No need to make bytes of Float3 values since they "
-            "are only available to read in database"
-        )
+    def from_python(self, value: Decimal):
+        # TODO: Tons of edge cases
+        sign, digits, exponent = value.as_tuple()
+        if -1 > exponent > 2:
+            raise ValueError("Exponent part can only be -1 to 2")
+        integer = reduce(lambda rst, x: rst * 10 + x, digits)
+        encoded_exponent = (exponent + 1) << 14
+
+        return struct.pack("<H", (integer + encoded_exponent))
 
 
-class Index(CorusData):
-    # TODO: Validate that correct bytes are used.
+class Index(CorusDataABC):
     """
     Index consists of 8 bytes, 4 bytes is the integer-part and 4 is the decimal part.
     The decimal part needs to be divided by the decimal factor of 100000000
     """
-    length = 8
-    value_type = decimal.Decimal
 
-    def __init__(self, value: decimal.Decimal):
-        self.check_value_type(value)
-        self.value = value
+    LENGTH = 8
+    VALUE_TYPE = Decimal
 
     @classmethod
-    def from_bytes(cls, in_bytes: bytes):
-        cls.check_in_data(in_bytes)
-        num_bytes = in_bytes[:4]
-        dec_bytes = in_bytes[4:]
-        dec = decimal.Decimal(
-            int.from_bytes(dec_bytes, cls.byte_order)
-        ) / decimal.Decimal(100000000)
-        num = decimal.Decimal(int.from_bytes(num_bytes, cls.byte_order))
-        return cls(value=(num + dec).quantize(decimal.Decimal("0.001")))
+    def to_python(cls, in_bytes: bytes):
+        integer, fraction = struct.unpack("<II", in_bytes)
+        return (
+            Decimal(integer) + (Decimal(fraction) / Decimal("100000000"))
+        ).normalize()
 
-    def to_bytes(self):
+    def from_python(self, value: Any):
         raise NotImplementedError(
             "No need to make bytes of Index values since they "
             "are only available to read in database"
         )
 
 
-class Null2(CorusData):
-    length = 2
+class Index9(CorusDataABC):
+    """
+    Index9 consists of 9 bytes, 5 bytes is the integer-part and 4 is the decimal part.
+    The decimal part needs to be divided by the decimal factor of 100000000
+    """
 
-    def __init__(self, value=None):
-        self.value = None
+    LENGTH = 9
+    VALUE_TYPE = Decimal
 
     @classmethod
-    def from_bytes(cls, in_bytes: bytes):
-        return cls(None)
+    def to_python(cls, in_bytes: bytes):
+        padded = in_bytes = in_bytes + b"\x00\x00\x00"  # pad so we can use struct.
+        integer, fraction = struct.unpack("<QI", in_bytes)
+        return (
+            Decimal(integer) + (Decimal(fraction) / Decimal("100000000"))
+        ).normalize()
 
-    def to_bytes(self):
+    def from_python(self, value: Any):
+        raise NotImplementedError(
+            "No need to make bytes of Index values since they "
+            "are only available to read in database"
+        )
+
+
+class Null2(CorusDataABC):
+    LENGTH = 2
+
+    @classmethod
+    def to_python(cls, in_bytes: bytes):
+        return None
+
+    def from_python(self, value: Any):
         return b"\x00\x00"
 
 
-class Null4(CorusData):
-    length = 4
-
-    def __init__(self, value=None):
-        self.value = None
+class Null4(CorusDataABC):
+    LENGTH = 4
 
     @classmethod
-    def from_bytes(cls, in_bytes: bytes):
-        return cls(None)
+    def to_python(cls, in_bytes: bytes):
+        return None
 
-    def to_bytes(self):
+    def from_python(self, value: Any):
         return b"\x00\x00\x00\x00"
 
 
-class CorusString(CorusData):
-    length = 8
-    value_type = str
-
-    def __init__(self, value: str):
-        self.check_value_type(value)
-        self.value = value
+class CorusString(CorusDataABC):
+    LENGTH = 8
+    VALUE_TYPE = str
 
     @classmethod
-    def from_bytes(cls, in_bytes: bytes):
-        cls.check_in_data(in_bytes)
-        return cls(in_bytes.decode("latin-1"))
+    def to_python(cls, in_bytes: bytes):
+        return in_bytes.rstrip(b"\x00").decode("latin-1")
 
-    def to_bytes(self):
-        return self.value.encode("latin-1")
+    def from_python(self, value: str):
+        out_bytes = value.encode("latin-1")
+        if len(out_bytes) > 8:
+            return out_bytes[:8]
+        if len(out_bytes) < 8:
+            return out_bytes + b"\x00" * (8 - len(out_bytes))
+        else:
+            return out_bytes
 
 
 @attr.s(auto_attribs=True)
-class ParameterSpecification:
+class DatabaseRecordParameter:
+    """
+    Represents how to interpret a database values. A sequence of `DatabaseRecordParameters`
+    can be used to parse a database record.
+    """
+
     name: str
+    data_class: Type[CorusDataABC]
+    affected_by_pulse_input: bool = attr.ib(default=False)
+    multiplied: Optional[Decimal] = attr.ib(default=None)
+
+
+@attr.s(auto_attribs=True)
+class IFlagParameter:
+    """
+    Represents a parameter in IFlag. Different firmwares can have different values on
+    different positions and in different formats. This provides an interface to the
+    structure of the IFlag message but the user needs to know the correct position and
+    format of the data that is read or written.
+    """
+
     id: int
-    description: str
-    read: bool
-    write: bool
-    data_class: typing.Type[CorusData]
-
-
-PARAMETERS: typing.List[ParameterSpecification] = [
-    ParameterSpecification(
-        name="firmware_version",
-        id=0,
-        description="Main firmware version",
-        read=True,
-        write=False,
-        data_class=CorusString,
-    ),
-    ParameterSpecification(
-        name="pulse_weight",
-        id=1,
-        description="Input pulse weight",
-        read=True,
-        write=True,
-        data_class=Float,
-    ),
-    ParameterSpecification(
-        name="compressibility_formula",
-        id=15,
-        description=(
-            "Compressibility Formula: 0=AGANX19 Standard, 1=S-GERG88, 2=PT, "
-            "3=AGANx19 Modified, 4=Not Used, 5=T, 6=16 Coeff. 7=AGA8"
-        ),
-        read=True,
-        write=True,
-        data_class=Byte,
-    ),
-    ParameterSpecification(
-        name="pressure_base",
-        id=19,
-        description="Base pressure, in selected pressure unit",
-        read=True,
-        write=True,
-        data_class=Float,
-    ),
-    ParameterSpecification(
-        name="temperature_base",
-        id=24,
-        description="Base temperature, in Kelvin",
-        read=True,
-        write=True,
-        data_class=Float,
-    ),
-    ParameterSpecification(
-        name="pressure_low",
-        id=30,
-        description="Low pressure threshold (Pmin)",
-        read=True,
-        write=True,
-        data_class=Float,
-    ),
-    ParameterSpecification(
-        name="pressure_high",
-        id=31,
-        description="High pressure threshold (Pmax)",
-        read=True,
-        write=True,
-        data_class=Float,
-    ),
-    ParameterSpecification(
-        name="temperature_low",
-        id=40,
-        description="Low temperature threshold (Tmin)",
-        read=True,
-        write=True,
-        data_class=Float,
-    ),
-    ParameterSpecification(
-        name="temperature_high",
-        id=41,
-        description="High temperature threshold (Tmax)",
-        read=True,
-        write=True,
-        data_class=Float,
-    ),
-    ParameterSpecification(
-        name="datetime",
-        id=106,
-        description="Current time and date",
-        read=True,
-        write=True,
-        data_class=Date,
-    ),
-    ParameterSpecification(
-        name="battery_days",
-        id=107,
-        description="Battery Autonomy Counter, in days",
-        read=True,
-        write=True,
-        data_class=Word,
-    ),
-    ParameterSpecification(
-        name="index_unconverted",
-        id=148,
-        description="Unconverted Index",
-        read=True,
-        write=True,
-        data_class=Index,
-    ),
-    ParameterSpecification(
-        name="index_converted",
-        id=149,
-        description="Converted Index",
-        read=True,
-        write=True,
-        data_class=Index,
-    ),
-]
-
-PARAMETERS_BY_NAME: typing.Mapping[str, ParameterSpecification] = {
-    parameter.name: parameter for parameter in PARAMETERS
-}
-PARAMETERS_BY_ID: typing.Mapping[int, ParameterSpecification] = {
-    parameter.id: parameter for parameter in PARAMETERS
-}
+    data_class: Type[CorusDataABC]
