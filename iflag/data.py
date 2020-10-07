@@ -300,8 +300,11 @@ class Index9(CorusDataABC):
 
     @classmethod
     def to_python(cls, in_bytes: bytes):
-        padded = in_bytes = in_bytes + b"\x00\x00\x00"  # pad so we can use struct.
-        integer, fraction = struct.unpack("<QI", in_bytes)
+        integer_bytes = in_bytes[:5] + b"\x00\x00\x00"  # pad so we can use struct.
+        fraction_bytes = in_bytes[5:]
+        integer = struct.unpack("<Q", integer_bytes)[0]
+        fraction = struct.unpack("<I", fraction_bytes)[0]
+
         return (
             Decimal(integer) + (Decimal(fraction) / Decimal("100000000"))
         ).normalize()
